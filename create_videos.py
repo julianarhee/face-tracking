@@ -27,45 +27,66 @@ def atoi(text):
 
 def natural_keys(text):
     return [ atoi(c) for c in re.split('(\d+)', text) ]
+    
 
-
-def create_run_movies(datakey, 
+#%%
+def create_run_movies(datakey, experiment,
                       dst_dir='/n/coxfs01/julianarhee/face-tracking/videos',
                       src_dir='/n/coxfs01/2p-data/eyetracker_tmp'):
-    print("...creating movies for dset: %s" % datakey)
-    curr_srcdirs = sorted(glob.glob(os.path.join(src_dir, '%s*' % (datakey))))
+    '''
+    Find all raw images in src_dir for current dataset.
     
+    datakey (str): 'YYYYMMDD_JC001'
+    
+    experiment (str): can be blobs, gratings, rfs, rfs10, retino
+    
+    Saves movies with format: 20190616_JC097_fov1_blobs_f1.mp4
+    
+    '''
+    allowed_experiments = ['blobs', 'gratings', 'rfs', 'rfs10', 'retino']
+    assert experiment in allowed_experiments, \
+        "Invalid exp <%s> requested. Choices: %s" % (experiment, allowed_experiments)
+    datakey_full = '%s_%s' % (datakey, experiment)
+    
+    errors=[]
+    print("...creating movies for dset: %s" % datakey_full) 
+    # Find subdirs for all experiments for this FOV
+    curr_srcdirs = sorted(glob.glob(os.path.join(src_dir, '%s*' % (datakey_full)))) 
     for s_dir in curr_srcdirs:
-        performance_info = os.path.join(s_dir, 'times', 'performance.txt')
-        metadata = pd.read_csv(performance_info, sep="\t ")
-        #metadata
-        fps = float(metadata['frame_rate'])
-
+        # Get metadata
+        performance_info = os.path.join(s_dir, 'times', 'performance.txt') 
+        try:
+            metadata = pd.read_csv(performance_info, sep="\t ")
+            fps = float(metadata['frame_rate'])
+            print("Frame rate: %.2f Hz" % fps)
+        except Exception as e:
+            print(e)
+            errors.append(s_dir)
+            return errors
+        
+        # Create name for movie file
         runkey = s_dir.split(datakey)[1].split('_')[1]
         framedir = os.path.join(s_dir, 'frames')
         movfile = os.path.join(dst_dir, '%s_%s.mp4' % (datakey, runkey))
         print(movfile)
-        
+     
         if os.path.exists(movfile):
             print("--- file exists!  skipping.")
             continue
-        
+             
         cmd='ffmpeg -y -r ' + '%.3f' % fps + ' -i ' + framedir+'/%d.png -vcodec libx264 -f mp4 -pix_fmt yuv420p ' + movfile
         os.system(cmd)
         print("... ...done")
         
     return
 
-
-
 # Load aggregate data info
 def load_aggregate_data_info():
     aggregate_dir = '/n/coxfs01/julianarhee/aggregate-visual-areas'
-    datainfo_fpath = os.path.join(aggregate_dir, 'dataset_info.pkl')
+    datainfo_fpath = os.path.join(aggregate_dir, 'dataset_info_assigned.pkl')
     with open(datainfo_fpath, 'rb') as f:
         sdata = pkl.load(f, encoding='latin1')
     return sdata
-
 
 def extract_options(options):
     
@@ -89,13 +110,9 @@ def extract_options(options):
 
     return options
 
-
-
-
 #rootdir = '/n/coxfs01/2p-data'
 #src_dir = os.path.join(rootdir, 'eyetracker_tmp')
 #dst_dir = '/n/coxfs01/julianarhee/face-tracking/videos'
-
 
 def main(options):
 
@@ -108,24 +125,24 @@ def main(options):
     sdata = load_aggregate_data_info()
     expdf = sdata[(sdata['animalid']==opts.animalid)\
                     & (sdata['session']==opts.session)]
+    print(expdf.head())
 
-    print(expdf)
-
-    for (animalid, session, fov), g in expdf.groupby(['animalid', 'session', 'fov']):
-        print("****%s-%s: creating videos for %s*****" % (animalid, session, fov))
-        fovnum = int(fov.split('_')[0][3:])
+    for datakey, g in expdf.groupby(['datakey']):
+        print("****%s: creating videos*****" % datakey)
         experiment_list = g['experiment'].unique()
-        print("Found %i experiments in curr fov" % len(experiment_list))
+        print("    Found %i experiments in curr fov" % len(experiment_list))
         for curr_exp in experiment_list:
-            datakey = '%s_%s_fov%i_%s' % (session, animalid, fovnum, curr_exp)
-            create_run_movies(datakey,
+            create_run_movies(datakey, curr_exp,
                               src_dir = opts.src_dir,
                               dst_dir = opts.dst_dir)
-            print("FINISHED")
+            print("    FINISHED")
 
-        
+    return
+
+
+#%%        
 if __name__ == '__main__':
     main(sys.argv[1:])
 
 
-
+# %%
